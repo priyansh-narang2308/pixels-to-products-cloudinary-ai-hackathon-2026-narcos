@@ -1,0 +1,92 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  role      String   @default("artisan")
+  assets    Asset[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Asset {
+  id           String  @id @default(cuid())
+  publicId     String  @unique // Cloudinary public_id (e.g. lumina/uploads/saree_123)
+  secureUrl    String // Original raw uploaded media URL
+  resourceType String  @default("image") // image | video
+  format       String? // jpg, png, webp, mp4, etc.
+  width        Int?
+  height       Int?
+  bytes        Int?
+
+  // Quality Audit Scores & Intelligence (Dual Source of Truth: app DB + Cloudinary Structured Metadata)
+  scoreBefore     Int? // 0 - 100 Initial Commerce Readiness Score
+  scoreAfter      Int? // 0 - 100 Post-Repair Verified Score
+  scoreDelta      Int? // scoreAfter - scoreBefore improvement (+X points)
+  decision        String? // PASS | REPAIR | REJECT
+  status          String  @default("pending") // pending | analyzing | repairing | verifying | approved | rejected
+  rejectionReason String? // e.g. watermark_detected, copyright_violation, repair_insufficient
+
+  // Granular 5-Dimension Score Breakdowns (Stored as JSON for radar/visualizer charts)
+  scoresBreakdown Json? // { initial: { product_visibility, ... }, verified: { ... } }
+
+  // Detected Flaws & Applied Actions
+  detectedIssues String[] @default([]) // ["cluttered_background", "uneven_lighting", "off_center"]
+  repairActions  String[] @default([]) // ["e_gen_background_replace:...", "e_improve", ...]
+  transformChain String? // Generated Cloudinary transformation string
+
+  // Semantic & Catalog Intelligence
+  productCategory String? // e.g. "Handwoven Saree", "Brass Decor", "Leather Goods"
+  seoDescription  String? // Generated SEO listing summary
+  dominantColors  String[] @default([]) // ["#8B4513", "#FFD700", "#DC143C"]
+  tags            String[] @default([])
+
+  // The 5 Omnichannel Asset Family URLs (Cached to prevent duplicate Cloudinary transformation consumption)
+  heroUrl        String? // 1:1 Amazon / Shopify Hero product shot
+  marketplaceUrl String? // 4:5 Flipkart / Myntra mobile feed card
+  bannerUrl      String? // 16:9 Editorial web billboard (AI outpainted)
+  lifestyleUrl   String? // Contextual in-situ lifestyle visual
+  socialUrl      String? // 1200x630 OG social share image with dynamic typography
+
+  // Video Streaming Pipeline (Bonus Feature)
+  hlsPlaylistUrl String? // Adaptive HLS streaming playlist (sp_auto / .m3u8)
+
+  // Relationships & Audit Trail
+  userId String
+  user   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  logs   PipelineLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([decision])
+  @@index([productCategory])
+  @@index([createdAt])
+}
+
+model PipelineLog {
+  id         String   @id @default(cuid())
+  assetId    String
+  asset      Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  step       String // upload | audit_1 | decision | transform | audit_2 | compile | metadata | complete
+  status     String // started | success | failed | skipped
+  durationMs Int? // Execution duration in milliseconds
+  message    String? // Human-readable status note
+  data       Json? // Raw API response snapshot for auditability
+  createdAt  DateTime @default(now())
+
+  @@index([assetId])
+  @@index([step])
+  @@index([createdAt])
+}
